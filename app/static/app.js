@@ -3,10 +3,43 @@
 const $=id=>document.getElementById(id);
 const state={datasetId:null,dataset:null,analysis:null,agent:null,ragHistory:[],busy:false,theme:'ocean',connected:false};
 const THEMES=['ocean','glacier','orchid'];
-// Browser privacy modes may deny sessionStorage; keep a tab-local fallback.
+// Optional persistent browser authentication. Never embed a server secret here.
+const TOKEN_KEY='barg-access';
 let fallbackToken='';
-function tokenGet(){try{return sessionStorage.getItem('barg-access')||fallbackToken}catch{return fallbackToken}}
-function tokenSet(v){fallbackToken=v;try{if(v)sessionStorage.setItem('barg-access',v);else sessionStorage.removeItem('barg-access')}catch{}}
+function storedToken(kind){try{return window[kind].getItem(TOKEN_KEY)||''}catch{return ''}}
+function writeToken(kind,value){try{if(value)window[kind].setItem(TOKEN_KEY,value);else window[kind].removeItem(TOKEN_KEY);return true}catch{return false}}
+function tokenGet(){return fallbackToken||storedToken('sessionStorage')||storedToken('localStorage')}
+function tokenSet(value,remember=false){
+ const v=String(value||'');fallbackToken=v;
+ if(!v){writeToken('sessionStorage','');writeToken('localStorage','');return false;}
+ if(remember&&writeToken('localStorage',v)){writeToken('sessionStorage','');return true;}
+ writeToken('localStorage','');writeToken('sessionStorage',v);return false;
+}
+function forgetRejectedToken(rejected){
+ if(!rejected)return;
+ if(fallbackToken===rejected)fallbackToken='';
+ for(const kind of ['localStorage','sessionStorage'])if(storedToken(kind)===rejected)writeToken(kind,'');
+}
+function installRememberControls(){
+ const panel=$('connectionPanel'),form=$('connectionForm');
+ if(!panel||!form||$('rememberBrowser'))return;
+ const walker=document.createTreeWalker(panel,NodeFilter.SHOW_TEXT);
+ while(walker.nextNode()){
+   const node=walker.currentNode;
+   node.nodeValue=node.nodeValue.replace(/The token is kept only in this browser tab['’]s session storage\.?/g,'On a trusted device, you can remember the token across tabs and browser restarts.');
+ }
+ const row=element('div');row.style.cssText='display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:12px 0 4px;color:inherit;font-size:13px';
+ const label=element('label');label.style.cssText='display:inline-flex;align-items:center;gap:8px;cursor:pointer';
+ const check=document.createElement('input');check.type='checkbox';check.id='rememberBrowser';check.checked=true;check.style.accentColor='#72e3ce';
+ label.append(check,document.createTextNode('Remember token on this trusted browser'));
+ const forget=element('button','','Forget saved token');forget.type='button';forget.id='forgetBrowserToken';forget.style.cssText='padding:8px 12px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer';
+ forget.addEventListener('click',()=>{tokenSet('');location.reload()});
+ row.append(label,forget);form.insertAdjacentElement('afterend',row);
+ const note=element('small','','Only remember a token on your own device. Browser storage is accessible to scripts on this site. Use Forget saved token to sign out.');note.style.cssText='display:block;margin:6px 0;color:inherit;opacity:.8';row.insertAdjacentElement('afterend',note);
+ const input=$('connectionToken');input.type='password';input.autocomplete='off';
+ // Clear displayed research data and credentials in other tabs on explicit logout.
+ window.addEventListener('storage',event=>{if((event.key===TOKEN_KEY||event.key===null)&&event.newValue===null){fallbackToken='';writeToken('sessionStorage','');location.reload()}});
+}
 const by=(selector)=>Array.from(document.querySelectorAll(selector));
 const fmt=(v,d=3)=>v==null?'N/A':Number(v).toFixed(d);
 const pct=v=>v==null?'N/A':Number(v).toFixed(1)+'%';
@@ -14,7 +47,7 @@ const safe=v=>String(v??'');
 function element(tag,className,text){const n=document.createElement(tag);if(className)n.className=className;if(text!==undefined)n.textContent=safe(text);return n}
 function toast(txt){const n=element('div','toast',txt);document.body.append(n);setTimeout(()=>n.remove(),4400)}
 function activity(message,error=false){const el=$('activityStatus');if(!el)return;el.textContent=message;el.classList.toggle('error',error)}
-function connectionPanel(message){const panel=$('connectionPanel');panel.classList.remove('hidden');$('connectionMessage').textContent=message||'Connect to the research engine.';const status=$('liveStatus');status.classList.add('offline');status.textContent='Action needed';activity(message||'Connection required',true)}
+function connectionPanel(message){state.connected=false;const panel=$('connectionPanel');panel.classList.remove('hidden');$('connectionMessage').textContent=message||'Connect to the research engine.';const status=$('liveStatus');status.classList.add('offline');status.textContent='Action needed';activity(message||'Connection required',true)}
 function closeConnection(){ $('connectionPanel').classList.add('hidden');$('liveStatus').classList.remove('offline');$('liveStatus').textContent='● API connected';state.connected=true;}
 window.addEventListener('error',event=>{const x=document.getElementById('activityStatus');if(x){x.textContent='Interface error: '+event.message;x.classList.add('error')}});
 function reportError(error){let msg=(error&&error.message)||String(error);$('banner').textContent=msg;$('banner').classList.remove('hidden');activity(msg,true);toast('Action failed: '+msg)}
@@ -28,11 +61,11 @@ async function api(path,opts={}){
  try{resp=await fetch(path,{...opts,headers,signal:controller.signal});
      try{payload=await resp.json()}catch{payload={detail:'Server returned an unreadable response'}};
  }catch(e){if(e.name==='AbortError')throw Error('Request timed out. Render may be restarting or the analysis may exceed free-tier resources. Retry with fewer rows.');
-   throw Error('Cannot reach the FastAPI backend. Open the deployed Render URL (or http://127.0.0.1:7860/ locally), not index.html directly. '+e.message)
+   throw Error('Cannot reach the FastAPI backend. Open the deployed Render URL (or http://127.0.0.1:7861/ locally), not index.html directly. '+e.message)
  }finally{clearTimeout(timer)}
  if(!resp.ok){
    const detail=typeof payload.detail==='string'?payload.detail:(JSON.stringify(payload.detail)||'Server error');
-   if(resp.status===401){connectionPanel('Access token missing or invalid. Enter the BARG_ACCESS_TOKEN from your Render environment settings, then press Connect.');throw Error('Access denied (401). Connect with the configured access token.');}
+   if(resp.status===401){forgetRejectedToken(token);connectionPanel('Access token missing or invalid. Enter the BARG_ACCESS_TOKEN from your Render environment settings, then press Connect.');throw Error('Access denied (401). Connect with the configured access token.');}
    if(resp.status===503){connectionPanel('Server-side access token has not been configured. Set BARG_ACCESS_TOKEN in the Render dashboard and redeploy.');}
    throw Error('HTTP '+resp.status+': '+detail);
  }
@@ -42,7 +75,7 @@ function navigate(id){by('.nav-link').forEach(n=>n.classList.toggle('active',n.d
  const label={overview:'Overview',audit:'Audit workbench',copilot:'RAG Copilot',agent:'Agent console',data:'Dataset studio',research:'Research basis',deployment:'Deployment'};$('crumbTitle').textContent=label[id]||id;window.scrollTo({top:0,behavior:'smooth'});if(id==='overview'&&state.analysis)setTimeout(drawScatter,30)}
 function settings(){return {dataset_id:state.datasetId,k:Number($('kClusters').value),kappa:Number($('strength').value),rho:Number($('floor').value),enforce_floor:$('enforceFloor').checked,drop_probability:Number($('dropout').value),seed:Number($('seed').value)}}
 function updateSliders(){$('strengthValue').textContent=fmt($('strength').value,3);$('floorValue').textContent=fmt($('floor').value,2);$('dropValue').textContent=Math.round(100*Number($('dropout').value))+'%'}
-async function loadDemo(){setBusy(true,'Loading public Digits dataset…');resetError();try{const d=await api('/api/demo');closeConnection();setDataset(d);toast('Public Digits pseudo-view example loaded');await runAudit()}catch(e){reportError(e)}finally{setBusy(false)}}
+async function loadDemo(){setBusy(true,'Loading public Digits dataset…');resetError();try{const d=await api('/api/demo');closeConnection();setDataset(d);toast('Public Digits pseudo-view example loaded');await runAudit();return true}catch(e){reportError(e);return false}finally{setBusy(false)}}
 function setDataset(d){state.datasetId=d.dataset_id;state.dataset=d;state.analysis=null;$('datasetLabel').textContent=d.name;let facts=$('datasetInfo');facts.replaceChildren();
  const rows=[['Name',d.name],['Number of records',d.rows],['View names',d.views.join(' · ')],['Quality source',d.score_source],['Scope',d.scope]];
  rows.forEach(([k,v])=>{const p=element('div','',undefined);const b=element('b','',k+': ');p.append(b,document.createTextNode(safe(v)));facts.append(p)});
@@ -166,18 +199,27 @@ async function health(){
  }catch(e){$('liveStatus').textContent='● API offline';connectionPanel('The FastAPI service is unavailable. Start it with run_windows.bat or deploy the Docker app on Render, then click Retry.');reportError(e);return null;}
 }
 async function boot(){
- if(location.protocol==='file:'){connectionPanel('This page was opened directly from disk. FastAPI is required: run run_windows.bat and use http://127.0.0.1:7860/');return;}
+ if(location.protocol==='file:'){connectionPanel('This page was opened directly from disk. FastAPI is required: run run_windows.bat and use http://127.0.0.1:7861/');return;}
  const h=await health();if(!h)return;
  if(h.auth_required && !tokenGet()){
    connectionPanel('This Render workspace requires a token. Open your Render dashboard → Environment → BARG_ACCESS_TOKEN and enter that value here.');
-   await ragInit().catch(()=>{});return;
+   return;
  }
- await loadDemo();await ragInit();
+ if(await loadDemo())await ragInit();
 }
 async function connectWorkspace(ev){if(ev)ev.preventDefault();
- const token=$('connectionToken').value.trim();if(token){tokenSet(token);}else{tokenSet('')}
- resetError();activity('Authenticating and loading demonstration…');await loadDemo();
- if(state.datasetId){$('connectionToken').value='';await ragInit();}
+ if(state.busy)return;
+ const token=$('connectionToken').value.trim()||tokenGet();
+ // Validate the candidate before persisting it. Do not store invalid secrets.
+ fallbackToken=token;
+ resetError();activity('Authenticating and loading demonstration…');
+ if(await loadDemo() && state.connected){
+   const remember=Boolean($('rememberBrowser')?.checked);
+   const persisted=tokenSet(token,remember);
+   $('connectionToken').value='';
+   if(token)toast(persisted?'Token remembered on this browser':'Token kept only for this tab');
+   await ragInit();
+ }else{fallbackToken='';}
 }
 // Evidence-grounded RAG Copilot, separate from numerical audit agent.
 function ragBubble(role,text){
@@ -217,7 +259,7 @@ async function ragAsk(question){
 function ragClear(){state.ragHistory=[];$('ragConversation').replaceChildren();ragBubble('assistant','Research chat reset. No conversations are persisted on the server.');$('ragCitations').textContent='Citation ledger cleared.';$('ragTrace').textContent='No tools have run yet.';$('ragEvidenceTag').textContent='WAITING'}
 
 function init(){
- $('bootNotice').remove();activity('JavaScript initialized • checking FastAPI connection…');
+ $('bootNotice').remove();installRememberControls();activity('JavaScript initialized • checking FastAPI connection…');
  by('.nav-link').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.tab)));
  $('themeBtn').addEventListener('click',()=>{state.theme=THEMES[(THEMES.indexOf(state.theme)+1)%THEMES.length];document.documentElement.dataset.theme=state.theme;if(state.analysis)drawScatter();toast('Theme: '+state.theme)});
  ['strength','floor','dropout'].forEach(id=>$(id).addEventListener('input',()=>{updateSliders();activity('Parameters changed. Click Run scientific audit to apply.')}));
