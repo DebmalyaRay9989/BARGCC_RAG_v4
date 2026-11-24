@@ -1,0 +1,79 @@
+
+
+
+# ==========================================================
+# BARG-CC AGENTIC RAG RESEARCH STUDIO V4
+# Optimized Render Free Docker Deployment
+# No managed database, persistent disk or paid add-ons
+# ==========================================================
+
+services:
+  - type: web
+    name: barg-cc-agentic-rag-v4
+    runtime: docker
+    plan: free
+
+    # Uncomment for a NEW service in Asia.
+    # region: singapore
+
+    # Docker configuration
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Automatic deployment
+    autoDeployTrigger: commit
+
+    # Application readiness
+    healthCheckPath: /api/ready
+
+    envVars:
+
+      # ========================================
+      # PYTHON RUNTIME OPTIMIZATION
+      # ========================================
+
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+
+      # ========================================
+      # NUMERICAL COMPUTATION OPTIMIZATION
+      # ========================================
+
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+
+      - key: OMP_NUM_THREADS
+        value: "1"
+
+      - key: MKL_NUM_THREADS
+        value: "1"
+
+      - key: NUMEXPR_NUM_THREADS
+        value: "1"
+
+      - key: BLIS_NUM_THREADS
+        value: "1"
+
+      # ========================================
+      # APPLICATION SECURITY
+      # ========================================
+
+      - key: BARG_REQUIRE_TOKEN
+        value: "1"
+
+      - key: BARG_ACCESS_TOKEN
+        sync: false
+
+      # ========================================
+      # RESEARCH DOCUMENT PROTECTION
+      # ========================================
+
+      - key: BARG_PUBLIC_SOURCE_PDFS
+        value: "0"
+
+
+
+

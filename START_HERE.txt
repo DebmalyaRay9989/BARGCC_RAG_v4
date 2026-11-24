@@ -1,0 +1,16 @@
+BARG-CC AGENTIC RAG v4 - COMPLETE WINDOWS INSTALLATION
+
+1. Extract this entire ZIP into E:\BARGCC_SETUP (or C:\BARGCC_SETUP).
+2. Open the BARGCC_RAG_v4 folder.
+3. DOUBLE-CLICK 00_INSTALL_WINDOWS.cmd.
+4. After installation, open http://127.0.0.1:7860 in browser.
+5. Later sessions: E:\BARGCC\01_START_WINDOWS.cmd.
+
+This release does not need py -3.11; it uses existing Miniconda and
+a short Python environment at E:\BARGCC_ENV. On first use it
+installs Python 3.11 and dependencies (internet usually required).
+
+If there is an error: run 04_DIAGNOSE_WINDOWS.cmd from E:\BARGCC.
+Read docs\Complete_Windows_Installation_and_Study_Guide.pdf.
+
+Do not delete the original project or reuse its old nested .venv.

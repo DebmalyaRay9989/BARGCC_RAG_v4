@@ -1,0 +1,25 @@
+# Render Blueprint: one FREE Docker web service, no managed database, no paid add-ons.
+# During initial Blueprint creation, supply BARG_ACCESS_TOKEN in Render's secret prompt.
+services:
+  - type: web
+    name: barg-cc-agentic-rag-v4
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/ready
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: BARG_REQUIRE_TOKEN
+        value: "1"
+      - key: BARG_ACCESS_TOKEN
+        sync: false
+      - key: BARG_PUBLIC_SOURCE_PDFS
+        value: "0"
